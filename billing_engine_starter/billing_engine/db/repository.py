@@ -329,9 +329,13 @@ class SubscriptionRepository:
     # Keep the method stubs so Day 3/4 can build on the same API surface.
     # ------------------------------------------------------------------
     def update_period(self, subscription_id: int, new_start: date, new_end: date) -> None:
-        # TODO Day 3.
-        # Hint: q.update_subscription_period(...)
-        raise NotImplementedError("Day 3: implement SubscriptionRepository.update_period")
+        with self.db.transaction() as conn:
+            q.update_subscription_period(
+                conn,
+                subscription_id,
+                new_start.isoformat(),
+                new_end.isoformat(),
+            )
 
     def update_status(
         self,
@@ -339,9 +343,13 @@ class SubscriptionRepository:
         new_status: SubscriptionStatus,
         past_due_since: Optional[date] = None,
     ) -> None:
-        # TODO Day 3.
-        # Hint: q.update_subscription_status(...)
-        raise NotImplementedError("Day 3: implement SubscriptionRepository.update_status")
+        with self.db.transaction() as conn:
+            q.update_subscription_status(
+                conn,
+                subscription_id,
+                new_status.value,
+                past_due_since.isoformat() if past_due_since else None,
+            )
 
     def update_plan(self, subscription_id: int, new_plan_id: int) -> None:
         # TODO Day 4.
@@ -427,9 +435,8 @@ class InvoiceRepository:
         return _invoice_from_row(row) if row else None
 
     def count_for_subscription(self, subscription_id: int) -> int:
-        # TODO Day 3.
-        # Hint: q.count_invoices_for_subscription(...)
-        raise NotImplementedError("Day 3: implement InvoiceRepository.count_for_subscription")
+        with self.db.connect() as conn:
+            return q.count_invoices_for_subscription(conn, subscription_id)
 
     def mark_paid(self, invoice_id: int) -> None:
         # TODO Day 4.
@@ -505,14 +512,41 @@ class LedgerRepository:
         self.db = db
 
     def add(self, entry: LedgerEntry) -> LedgerEntry:
-        # TODO Day 3.
-        # Hint: q.insert_ledger_entry(...)
-        raise NotImplementedError("Day 3: implement LedgerRepository.add")
+        with self.db.transaction() as conn:
+            new_id = q.insert_ledger_entry(
+                conn,
+                entry.invoice_id,
+                entry.customer_id,
+                entry.amount.to_storage(),
+                entry.amount.currency,
+                entry.direction.value,
+                entry.reason,
+            )
+        return LedgerEntry(
+            id=new_id,
+            invoice_id=entry.invoice_id,
+            customer_id=entry.customer_id,
+            amount=entry.amount,
+            direction=entry.direction,
+            reason=entry.reason,
+            created_at=entry.created_at,
+        )
 
     def list_for_customer(self, customer_id: int) -> list[LedgerEntry]:
-        # TODO Day 3.
-        # Hint: q.select_ledger_for_customer(...)
-        raise NotImplementedError("Day 3: implement LedgerRepository.list_for_customer")
+        with self.db.connect() as conn:
+            rows = q.select_ledger_for_customer(conn, customer_id)
+        return [
+            LedgerEntry(
+                id=row["id"],
+                invoice_id=row["invoice_id"],
+                customer_id=row["customer_id"],
+                amount=Money(row["amount"], row["currency"]),
+                direction=LedgerDirection(row["direction"]),
+                reason=row["reason"],
+                created_at=_parse_datetime(row["created_at"]),
+            )
+            for row in rows
+        ]
 
     # These two methods are intentionally implemented to REJECT — do not override.
     def update(self, *args, **kwargs):
@@ -544,16 +578,21 @@ class PaymentAttemptRepository:
         failure_reason: Optional[str],
         next_retry_at: Optional[datetime],
     ) -> int:
-        # TODO Day 3.
-        # Hint: q.insert_payment_attempt(...)
-        raise NotImplementedError("Day 3: implement PaymentAttemptRepository.add")
+        with self.db.transaction() as conn:
+            return q.insert_payment_attempt(
+                conn,
+                invoice_id,
+                attempt_no,
+                status,
+                failure_reason,
+                next_retry_at.isoformat() if next_retry_at else None,
+            )
 
     def list_for_invoice(self, invoice_id: int) -> list[dict]:
-        # TODO Day 3.
-        # Hint: q.select_attempts_for_invoice(...)
-        raise NotImplementedError("Day 3: implement PaymentAttemptRepository.list_for_invoice")
+        with self.db.connect() as conn:
+            rows = q.select_attempts_for_invoice(conn, invoice_id)
+        return [dict(row) for row in rows]
 
     def count_for_invoice(self, invoice_id: int) -> int:
-        # TODO Day 3.
-        # Hint: q.count_attempts_for_invoice(...)
-        raise NotImplementedError("Day 3: implement PaymentAttemptRepository.count_for_invoice")
+        with self.db.connect() as conn:
+            return q.count_attempts_for_invoice(conn, invoice_id)
